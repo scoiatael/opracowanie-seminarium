@@ -1,0 +1,554 @@
+\documentclass[11pt]{scrartcl}
+
+\usepackage[OT4,plmath]{polski}
+\usepackage{amsmath,amssymb,amsfonts,amsthm,mathtools}
+\usepackage{color}
+\usepackage{fontspec}
+\usepackage{listings,times}
+
+\definecolor{keywords}{RGB}{30,200,30}
+\definecolor{comments}{RGB}{210,40,40}
+\usepackage{listings,times}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  showstringspaces=false,
+  literate={fun}{$\lambda$}1,
+  keywordstyle=\color{keywords},
+  commentstyle=\color{comments}\emph}
+\renewcommand\lstlistingname{Przykład}
+
+\usepackage{bbm}
+\usepackage[colorlinks=true, urlcolor=blue]{hyperref}
+\usepackage{url}
+
+\setmainfont{Fira Sans}
+
+\title{Jak (prawie) bezboleśnie napisać kompilator języka funkcyjnego?}
+\subtitle{Opracowanie seminarium ,,Implementacja języków funkcyjnych''}
+\author{Łukasz Czapliński}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\vfill
+\section*{Streszczenie}
+W pracy ,,Compiling with Continuations'' Andrew W. Appel opisał konstrukcję
+kompilatora SML/NJ.\@ W trakcie seminarium “Implementacja języków funkcyjnych”
+napisaliśmy prosty kompilator języka z rodziny ML.\@ W  tej pracy opisuję, które
+idee okazały się szczególnie przydatne i na jakie problemy natrafiliśmy.
+
+\vfill
+
+\pagebreak
+
+
+\section{Wstęp}
+Wielu programistów uważa, że pisanie kompilatorów jest ciężkie. Do tego stopnia,
+że podstawowy podręcznik nosi potocznie nazwę “Książki o smokach” (Dragonbook,
+\cite{Dragonbook}).
+Skoro tak ciężkie jest napisanie prostego kompilatora, to jak ciężkie może być
+napisanie kompilatora języka wysokiego poziomu, z rodziny ML?\@ W ramach
+seminarium “Implementacja języków funkcyjnych” na Instytucie Informatyki
+Uniwersytetu Wrocławskiego postanowiliśmy taki kompilator napisać.
+
+Za podręcznik przyjęliśmy ,,Compiling with continuations'', opisujący
+implementację języka SML.
+Poniższa praca jest podsumowaniem tego, co udało nam się osiągnąć.
+Kolejność rozdziałów odpowiada kolejności wykonywanych przez nas prac.
+Nacisk położony jest na kroki kluczowe dla działania kompilatora.
+
+\section{Architektura kompilatora (Języki pośrednie)}
+Celem każdego kompilatora jest transformacja tekstu napisanego przez użytkownika
+na kod maszynowy, działający na danej architekturze i wykonujący program zadany
+przez użytkownika.
+Większość kompilatorów wyróżnia przynajmniej dwa stadia: parsowanie tekstu do
+drzewa składniowego (\textit{Abstract Syntax Tree} --- AST) --- \textit{analiza}, a następnie
+generowanie kodu maszynowego z AST --- \textit{synteza} \cite{Dragonbook}.
+Im prostszy język w którym kompilator jest napisany, tym trudniej dodać więcej
+stadiów.
+Ponieważ nasz kompilator napisany został w Ocamlu (języku funkcyjnym wysokiego
+poziomu), kompilacja miała kilka stadiów; składała się z parsowania tekstu do
+AST, a następnie z ciągu transformacji, które upraszczały, optymalizowały oraz
+tłumaczyły AST na kolejne języki pośrednie.
+W finalnej wersji wyróżnić można następujące języki pośrednie:
+\begin{itemize}
+\item RawMiniML --- pierwszy język, powstały ze sparsowania tekstu użytkownika.
+  Można powiedzieć, że ten właśnie język jest przez nas kompilowany.
+\item MiniML --- powstały z poprzedniego przez obliczenie typów
+  (zaimplementowany został system inferencji typów) i usunięciu sugestii typów
+  danych przez użytkownika na rzecz informacji o typie każdego węzła AST.
+\item Lambda --- powstały przez usunięcie typów i wszystkich zależnych od nich konstrukcji z MiniML.
+\item CPS --- Continuation Passing Style --- język w którym będzie wykonana większość optymalizacji.
+\item AbstractM --- asembler procesora na jaki będziemy kompilować.
+\end{itemize}
+
+
+
+
+\section{Opis kompilowanego języka}
+MiniML jest uproszczonym językiem z rodziny ML, silnie wzorowanym na Ocamlu
+\cite{Leroy16} oraz SML-u \cite{Appel1}.
+Podobnie jak one, jest statycznie typowany i posiada system inferencji typów.
+Składnia jest podobna do innych języków z tej rodziny, z kilkoma wyjątkami:
+\begin{lstlisting}[caption=Przykład deklaracji typu danych w MiniML]
+datatype 'a list = nil | cons of {'a, 'a list}
+in
+
+let rec rev_append ['a] (xs ys : 'a list) : 'a list =
+  match xs with
+  | nil    => ys
+  | cons p => rev_append['a] (#1 p) (cons['a] {#0 p, ys})
+  end
+in fn ['a] (xs : 'a list) => rev_append['a] xs (nil['a])
+\end{lstlisting}
+\begin{itemize}
+\item Deklaracje typów są widoczne tylko w określonym bloku kodu,
+\item Nie ma ograniczenia w nazewnictwie typów danych i konstruktorów
+  (inaczej niż w Ocamlu, podobnie jak w SML-u),
+\item Pattern matching nie wprowadza nowych zmiennych --- do pól konstruktora
+  trzeba się odwołać przez dekonstruktor: \lstinline|\#1 p| --- oznacza drugi element \lstinline|p|
+  (gdzie \lstinline|p| jest stworzone przez konstruktor o arności przynajmniej 2),
+\item Polimorficzne funkcje muszą deklarować parametry typowe przez \lstinline|['a]|.
+\item Nie istnieje system modułów.
+\end{itemize}
+
+
+
+\section{Optymalizacje typowe dla języka ML}
+Pierwszym krokiem kompilacji na jaki się zdecydowaliśmy to transformacja do
+prostego języka opartego na rachunku lambda.
+
+Transformację tę można rozważać jako funkcję $F$, która jako argument przyjmuje
+$\Gamma$- informację o typach wszystkich wyrażeń w programie, oraz $A_{ML}$-
+wyrażenie w języku MiniML, a zwraca $A_L$- wyrażenie w języku Lambda.
+
+
+Nasz język pośredni Lambda pozbawiony jest typów, tak więc na tym etapie
+wszystkie konstrukcje, które w jakiś sposób potrzebują systemu typów muszą
+zostać zamienione na prostsze, które nie potrzebują tej dodatkowej informacji.
+W językach rodziny ML zwykle do nich należą \cite{Appel4}:
+\begin{itemize}
+\item nazwane pola rekordów;
+\item moduły, sygnatury, funktory;
+\item typy danych, konstruktory;
+\item pattern-matching;
+\item wyjątki.
+\end{itemize}
+Dodatkowo uwagi wymagają:
+\begin{itemize}
+\item testowanie równości (to, jaki kod będzie potrzebny do porównania
+  równości dwóch obiektów ściśle zależy od tego co wiemy o ich typie)
+  \cite{Appel4.3}.,
+\item optymalizacja dostępu do pamięci (niektóre typy mogą pozwolić na lepszą alokację
+  pewnych komórek pamięci) \cite{Appel4.4}.
+\end{itemize}
+
+Język MiniML jest prostszym podzbiorem Ocamla, musimy więc rozważyć jedynie typy
+danych, pattern-matching oraz wyjątki.
+
+Na tym etapie można przyjąć jedno z kilku ograniczeń tego, co jesteśmy w stanie
+zrobić w trakcie działania programu \cite{Appel4.1}:
+\begin{enumerate}
+\setcounter{enumi}{-1}
+\item Nie potrafimy odróżnić wskaźników od liczb całkowitych.
+\item Potrafimy odróżnić małe liczby całkowite od wskaźników.
+\item Potrafimy odróżnić wszystkie wskaźniki od liczb całkowitych.
+\item Potrafimy odróżnić wskaźniki do rekordów o różnej długości.
+\end{enumerate}
+Od tego, jakie założenia przyjmiemy zależy ile dodatkowych informacji będziemy
+musieli przechować w pamięci (np dodając dodatkowy znacznik dla każdej wartości,
+mówiącej czy jest ona liczbą całkowitą, czy wskaźnikiem --- pozwoli to pracować
+przy założeniu 2, gdy w rzeczywistości maszyna operuje na 0).
+
+W naszym kompilatorze (na tym etapie) przyjęliśmy założenie 1 --- jest ono realne,
+gdyż w rzeczywistości wszystkie ,,niskie'' wskaźniki zwykle są specjalnie
+pozostawiane wolne, by łatwiej znajdować błędy w programach.
+
+
+Przy takim założeniu typy danych można podzielić na kilka kategorii, zależnie od
+tego, jakie informacje musimy o jego konstruktorach przechować:
+
+\begin{enumerate}
+\item ,,Tagged'' --- wymagające przechowania numeru konstruktora i wskaźnika na
+  wartość zapisaną w konstruktorze (najogólniejszy),
+\item ,,Constant'' --- potrzeba tylko numeru konstruktora, żaden nie posiada
+  dodatkowej wartości,
+\item ,,Transparent'' --- typ danych ma tylko jeden konstruktor, nie potrzeba żadnej
+  informacji zapisywać,
+\item ,,TransB'' --- typ danych posiada jeden konstruktor z wartością, wszystkie
+  poza nim nie przechowują wartości. Dzięki założeniu 1. możemy użyć jednej komórki
+  pamięci.
+\end{enumerate}
+
+Pozbycie się konstruktorów wymaga więc sprawdzenia, do jakiej kategorii należy
+jego typ danych, a następnie czasem wygenerowania kodu tworzącego rekord (jedno, lub
+dwuelementowy) o odpowiednich wartościach (stała będąca numerem konstruktora
+i/lub wartość przechowywana w konstruktorze).
+
+Wprowadzenie nowego typu danych nie generuje żadnego kodu.
+
+Dekonstrukcja instancji typu danych (\textit{pattern matching}) wymaga wygenerowania kodu
+zależnie od kategorii tego typu danych --- żeby dowiedzieć się, z jakim
+konstruktorem mamy do czynienia może być potrzebne wykonanie kilku różnych
+czynności:
+\begin{itemize}
+\item odczytanie jednego z jego pól i porównanie z numerami konstruktorów tego
+  typu danych,
+\item sprawdzenie czy jest to wskaźnik,
+\item czasem też nie trzeba nic robić.
+\end{itemize}
+
+Sytuacja z wyjątkami jest jeszcze gorsza --- wyjątki różnią się od normalnych
+typów danych tym, że na etapie kompilacji danej jednostki nie jest wiadome ile
+będzie typoów
+konstruktorów. Dzieje się tak, ponieważ moduły są kompilowane oddzielnie, i
+każdy może zdefiniować swoje wyjątki. Z tego powodu wyjątki są reprezentowane
+jako rekordy dwuelementowe, gdzie pierwszy element to (wskaźnik na) wartość
+przechowywana w konstruktorze, a drugi to wskaźnik na ciąg znaków będący nazwą
+wyjątku. Rzucenie wyjątku to wówczas zapisanie takiej wartości w odpowiednie
+miejsce, a złapanie to porównanie wskaźnika na nazwę ze znanymi wartościami.
+Jest to wydajne, ponieważ musimy jedynie porównać wskaźniki (wiemy że wszystkie
+instancje wyjątku danego typu będą miały ten sam wskaźnik na nazwę, bo jest on
+generowany przez kod w miejscu deklaracji wyjątku).
+
+
+\section{Continuation Passing Style (CPS)}
+CPS to styl zapisu programu, w którym kontynuacja (kontrola, kod który ma użyć
+zwracanej wartości funkcji) jest przekazywana jawnie jako parametr każdej
+funkcji --- zwykle ostatni.
+
+Zakładając, że \lstinline|*&|, \lstinline|+&|, \lstinline|sqrt&| to  odpowiedniki funkcji \lstinline|*|, \lstinline|+|, \lstinline|sqrt|  w CPS, używane
+w notacji prefiksowej:
+\begin{lstlisting}[caption=Typowy Program]
+let pyth x y =
+ sqrt(x*x + y*y)
+\end{lstlisting}
+\begin{lstlisting}[caption=Ten sam program w CPS]
+let pyth& x y k =
+ (*& x x (fn (x2) =>
+          (*& y y (fn (y2) =>
+                   (+& x2 y2 (fn (x2py2) =>
+                              (sqrt& x2py2 k))))))
+
+\end{lstlisting}
+
+
+Jak widać, zapisanie programu w CPS wymaga nazwania każdej wartości pośredniej.
+Dzięki temu analiza ile wartości jest żywych (ile rejestrów jest potrzebnych do
+przechowywania wartości w danym momencie obliczeń) jest trywialna.
+
+
+Dodatkowymi zaletami CPS-u są:
+\begin{itemize}
+\item kolejność wykonywania funkcji jest jasno określona i nie zależy od
+  języka (może być ewaluowany zarówno strict, jak i lazy --- te same obliczenia
+  zostaną wykonane w tej samej kolejności).
+\item łatwa reprezentacja domknięcia funkcji --- w innych językach pośrednich
+  często nie pozwala się na zagnieżdżanie funkcji, co wymusza pozbycie się ich z
+  języka we wcześniejszych stadiach --- co może utrudnić wiele
+  optymalizacji~\cite{Appel1.2}.
+\end{itemize}
+Wszystko to sprawia, że CPS jest zapisem doskonałym do optymalizacji
+(porównywalnym, o ile nie lepszym, niż SSA wykorzystywane przez LLVM i Clang).
+
+
+
+\section{Transformacja do CPS-u}
+Przekształcenie języka Lambda do CPS-u można traktować jako funkcję $F$,
+przyjmującą jako argumenty $A_L$- wyrażenie w języku Lambda oraz $c$ --- kontynuację, a
+zwracającą $A_C$- wyrażenie w CPS.\@ Transformację rozpoczyna wywołanie $F$ z
+wyrażeniem reprezentującym pełen program oraz kontynuacją która zakończy
+działanie programu gdy zostanie wywołana.
+
+
+Całość transformacji została opisana szczegółowo w \cite{Appel5}. Na szczególną uwagę
+zasługują pewne szczególne przypadki.
+
+\subsection{Operatory logiczne}
+Operatory logiczne językach z rodziny ML zwracają wartości: \textit{prawdę} lub \textit{fałsz}
+(\textit{true} / \textit{false}). W CPS wybierają jedną z dwóch kontynuacji. Aby temu zaradzić
+wywołujemy tą samą kontynuację w każdym z dwóch przypadków, ale przekazujemy
+różne wartości:
+\begin{lstlisting}
+F(App (Primop i, E), c) =
+   F(E, fun v . PRIMOP(i, [v], [], [c(INT 0), c(INT 1)]))
+\end{lstlisting}
+
+Niestety kopiując kontynuację, zwiększamy rozmiar kodu wynikowego --- czasem nawet
+wykładniczo! Możemy tego uniknąć używając pomocniczej funkcji, która przechowa
+kontynuację:
+\begin{lstlisting}
+F(App (Primop i, E), c) =
+   F(E, fun v . FIX([(k, [x], c(VAR x))],
+     PRIMOP(i, [v], [], [APP(VAR k, INT 0), APP(VAR k, INT 1)]))
+\end{lstlisting}
+
+\subsection{Operowanie kontynuacjami w języku Lambda}
+Operatory \textit{callcc} i \textit{throw} (pozwalające używać mechanizmu kontynuacji bezpośrednio
+w języku Lambda wydają się idealnie pasować do CPS-u:
+\begin{lstlisting}
+F(App (Primop throw, E), c) =
+   F(E, fun v . FIX([(f, [x, j], APP(v, [VAR x]))], c(VAR f))
+\end{lstlisting}
+\lstinline|throw f| obliczy się do funkcji, która zignoruje swoją kontynuację i zamiast niej
+użyje \lstinline|f|.
+
+\begin{lstlisting}
+F(App (Primop callcc, E), c) =
+  FIX([(k, [x], c(VAR x))], F(E, fun v . APP(v, [VAR k, VAR k])))
+\end{lstlisting}
+\lstinline|callcc f| zapisuje aktualną kontynuację \lstinline|c| jako funkcję \lstinline|k : fun v . c(v)| i używa
+funkcji \lstinline|k| jako zarówno argumentu, jak i kontynuacji \lstinline|f|. Dzięki temu niezależnie
+od tego, czy \lstinline|f| zakończy działanie normalnie, czy wywoła swój argument, efekt
+będzie ten sam.
+
+
+\subsection{Wyjątki}
+Za wyjątki w języku  Lambda odpowiadają instrukcje \textit{Handle} i \textit{Raise}. W CPS w tym
+celu używane są operatory \textit{gethdlr} i \textit{sethdlr}, odpowiadające za trzymanie
+wskaźnika do funkcji, która aktualnie obsługuje wyjątki:
+\begin{lstlisting}
+F(Raise E, c) = F(E, fun v . PRIMOP(gethdlr, [], [h], [APP(VAR h, [v])]))
+\end{lstlisting}
+\textit{Raise} po prostu wywołuje aktualną funkcję obsługującą wyjątki.
+
+\textit{Handle} natomiast musi ją odpowiednio ustawić, i na koniec przywrócić:
+\begin{lstlisting}
+F(Handle(A, B), c) =
+  PRIMOP(gethdlr, [], [h],
+    [FIX([(k, [x], c(VAR x)),
+            (n, [e], PRIMOP(sethdlr, [VAR h], [],
+                         [F(B, fun f . APP(f, [VAR e, VAR k]))]))],
+      PRIMOP(sethdlr, [VAR n], [],
+        [F(A, fun v . PRIMOP(sethdlr, [VAR h], [] [APP(VAR k, [v])]))]))])
+\end{lstlisting}
+
+Jednakże wzajemne zachowanie \textit{callcc} i \textit{Handle} prowadzi do problemu: w aktualnym rozwiązaniu
+kontynuacja jest wywoływana z funkcją obsługującą wyjątki wiązaną dynamicznie
+(taką, jak zostawił wywołujący), natomiast powinna być ona wiązana statycznie
+(taka, jaką miała funkcja tworząca kontynuację). Z tego powodu \textit{callcc} musi
+odczytać i przywrócić odpowiednią funkcję obsługującą wyjątki:
+\begin{lstlisting}
+F(App (Primop callcc, E), c) =
+  PRIMOP(gethdlr, [], [h],
+    [FIX([(k, [x], c(VAR x)),
+          (k', [x'], 
+              PRIMOP(sethdlr, [VAR h], [], [APP(VAR k, [VAR x'])]))],
+      F(E, fun v . APP(v, [VAR k’, VAR k]))])
+\end{lstlisting}
+
+\subsection{Case}
+Dodatkowo, instrukcja \textit{Case} (ma ona
+wybrać odpowiedni przypadek ze skończonej listy) może być przekształcona na
+wiele sposobów  --- \cite{Appel5.7} sugeruje kilka
+możliwości optymalizacji: binarne przeszukiwania, drzewa decyzyjne, liniowe
+porównania, tablicę skoków. W naszej implementacji wykorzystaliśmy najprostszą
+do napisania: liniowe przeszukiwanie. W większości przypadków lista możliwości
+będzie bardzo krótka --- praktycznie jedynie generatory kodu tworzą więcej niż
+kilka przypadków.
+
+
+
+
+\section{Optymalizacje kodu w CPS-ie}
+Dotychczas celem naszej kompilacji było uzyskanie kodu w CPS-ie. Stało się tak,
+ponieważ uznaliśmy CPS za dobry język do optymalizacji. Zaimplementowaliśmy
+następujące:
+\begin{itemize}
+\item ,,proste'' \begin{itemize}
+  \item zwijanie stałych,
+  \item $\eta$-redukcja,
+  \item uncurrying,
+  \end{itemize}
+\item $\beta$-ekspansja,
+\item hoisting (zmiana kolejności wyrażeń),
+\item eliminacja wspólnych podwyrażeń.
+\end{itemize}
+
+Najwięcej problemów
+pojawiło się z zaawansowanymi optymalizacjami: $\beta$-ekspansją, hoistingiem oraz
+eliminacją wspólnych podwyrażeń.
+
+\subsection{$\beta$-ekspansja}
+\textit{$\beta$-ekspansja} (wielokrotna $\beta$-redukcja) to zamiana wywołania funkcji na ciało funkcji z
+podstawionymi argumentami. Jest to przydatna optymalizacja (może pozwolić na
+działanie wielu innymi), ale niebezpieczna (powiększa rozmiar programu, bez
+gwarancji na poprawę). Niestety nie da się z pewnością stwierdzić, kiedy ta
+optymalizacja coś da \cite{Appel7.1}. Dlatego stosuje się heurystyki, określające czy
+warto. Starają się one ocenić proste kryterium: czy po zastosowaniu $\beta$-ekspansji
+i kolejnych optymalizacjach rozmiar kodu się zmniejszy. Niestety ponownie nie
+jest to problem, który da się policzyć z całą pewnością inaczej niż wykonując te
+działania. Nasza ocena (wzorowana na \cite{Appel7.2}, \cite{Appel7.3}) opiera się na przypisaniu
+każdej funkcji pewnej oceny jej rozmiaru i porównywaniu szacowanych zmian w
+rozmiarze programu z pewną stałą, pomniejszoną o głębokość (aby uniknąć
+rozwijania ciała już rozwiniętej funkcji) oraz numer rundy (aby przypadkiem nie
+pozostać w cyklu, np w funkcjach rekurencyjnych). Używając takich heurystyk
+wykonujemy na zmianę $\beta$-ekspansję oraz pozostałe ,,proste'' optymalizacje
+aż osiągniemy punkt stały.
+
+
+\subsection{Hoisting}
+\textit{Hoisting} polega na zmianie kolejności wyrażeń. W szczególności może to pozwolić
+na połączenie definicji funkcji, lub wyjęcie pewnego wyrażenia z pętli, lub
+niewykonanie potencjalnie drogiej operacji jeśli jej wynik jest potrzebny tylko
+w jednej gałęzi instrukcji warunkowej. Definicja, w jakim przypadku
+optymalizacja ta może być wykonana nie jest ciężka, ale żmudna \cite{Appel8.3}. Wybór
+czy należy ją wykonać, podobnie jak w wyoadku $\beta$-ekspansji, nie jest
+trywialny. Appel \cite{Appel8.3} sugeruje
+zachłanne podejście: zamiana kolejności tylko jeśli mamy gwarancję zmniejszenia
+czasu wykonania programu. To oznacza, m.in. że nigdy nie wyjmiemy wyrażenia z pętli
+(gdyż nie mamy gwarancji że wykona się ona przynajmniej raz). Definicje funkcji
+będziemy najpierw spychali w dół, a jeśli to się nie uda, to w górę. W ten
+sposób połączenie dwóch funkcji zawsze zmniejsza czas wykonania.
+
+
+\subsection{Eliminacja wspólnych podwyrażeń}
+Eliminację wspólnych podwyrażeń (\textit{Common Subexpression Elimination} --- CSE) najprościej jest pokazać na przykładzie \cite{Appel9}:
+\begin{lstlisting}
+val z = a*b*c+a*b*c
+\end{lstlisting}
+
+W CPS będzie on wyglądać następująco:
+\begin{lstlisting}
+PRIMOP(*,[VAR a, VAR b], [u], [
+  PRIMOP(*, [VAR u, VAR c], [v], [
+    PRIMOP(*, [VAR a, VAR b], [w], [
+      PRIMOP(*, [VAR w, VAR c], [x], [
+        PRIMOP(+, [VAR v, VAR x], [z], [ ...
+\end{lstlisting}
+
+Wartość \lstinline|a*b| jest liczona podwójnie. Możemy więc zastąpić \lstinline|w| przez \lstinline|u|:
+\begin{lstlisting}
+PRIMOP(*,[VAR a, VAR b], [u], [
+  PRIMOP(*, [VAR u, VAR c], [v], [
+      PRIMOP(*, [VAR u, VAR c], [x], [
+        PRIMOP(+, [VAR v, VAR x], [z], [ ...
+\end{lstlisting}
+
+To z kolei pozwala zauważyć, że wartość \lstinline|u*c| jest liczona podwójnie. Zastępujemy więc
+\lstinline|x| przez \lstinline|v|:
+\begin{lstlisting}
+PRIMOP(*,[VAR a, VAR b], [u], [
+  PRIMOP(*, [VAR u, VAR c], [v], [
+        PRIMOP(+, [VAR v, VAR v], [z], [ ...
+\end{lstlisting}
+To z kolei odpowiada wyrażeniu
+\begin{lstlisting}
+val z = let val v = a*b*c in v+v
+\end{lstlisting}
+
+
+\section{Droga do kodu maszynowego}
+Po otrzymaniu kodu zoptymalizowanego kodu w CPS-ie pozostaje tylko przepisać go
+na wykonywalny na danej maszynie. Problemy na jakie napotkaliśmy to:
+\begin{itemize}
+  \item zagnieżdżone definicje funkcji --- wywołanie funkcji w architekturze von
+    Neumanna jest proste, problem pojawia się gdy funkcja posiada zmienne wolne,
+\item ilość żywych (potrzebnych w danym momencie obliczeń) wartości może
+  przewyższyć ilość rejestrów maszyny na którą generujemy kod,
+\item brakuje nam automatycznego zarządzania pamięcią.
+\end{itemize}
+
+
+\subsection{Domnknięcia}
+Za rozwiązanie pierwszego problemu odpowiada dodanie domknięć (\textit{closure
+conversion}) \cite{Appel10}. Polega ono na prostej zmianie: każda funkcja (zarówno przekazywana
+jawnie, jak i kontynuacja) przestaje być ,,tylko'' prostym wskaźnikiem na funkcję,
+a staje się strukturą danych o znanej strukturze, która przechowuje zarówno
+adres funkcji, jak i jej zmienne wolne. Struktura ta jest bardzo prosta --- jest
+to rekord, którego pierwszym elementem jest wskaźnik na funkcję, a kolejnymi
+jego elementami są zmienne wolne.
+
+Wywołanie funkcji wiąże się ze stworzeniem takiej struktury. Z tego powodu
+przydatne jest znalezienie takich funkcji które nie potrzebują tej dodatkowej
+struktury. Nazywamy takie funkcje \textit{znanymi} --- są to funkcje, które nie są nigdy
+przekazywane jako argument. Dzięki temu znamy wszystkie miejsca gdzie dana
+funkcja jest wywoływana i możemy ją przekształcić --- przekazując wszystkie jej
+zmienne wolne jako argumenty.
+
+\subsection{Rozlewanie rejestrów}
+Aby upewnić się, że ilość potrzebnych żywych zmiennych w danym momencie nie
+przekracza ilości rejestrów (a zatem kod daje się wykonać) wykonujemy proces
+zwany rozlewaniem rejestrów (\textit{register spilling}) \cite{Appel11}. Polega on na wykryciu
+takich sytuacji w czasie kompilacji i rozwiązaniu problemu przez alokację
+dodatkowych rekordów na stosie. Dzięki temu zamiast potrzebować n rejestrów na
+zmienne, możemy użyć jednego rejestru wskazującego na rekord n-elementowy.
+Oczywiście ceną za takie posunięcie jest konieczność tworzenia i ładowania
+wartości do oraz z takiego rekordu trakcie wykonania programu.
+
+
+\subsection{Odśmiecanie pamięci}
+Do korzystania z automatycznego odśmiecania pamięci (\textit{garbage collection})
+potrzebujemy ustalić:
+\begin{itemize}
+\item  kiedy uruchomić odśmiecanie pamięci, oraz
+\item które wartości są osiągalne (a zatem które możemy usunąć).
+\end{itemize}
+Okazuje się, że odpowiedź na pierwsze pytanie może być prosta: przed wywołaniem
+każdej funkcji sprawdzamy, ile wolnej pamięci pozostało, i jeśli jest jej za
+mało uruchamiamy procedurę odśmiecania pamięci.
+
+Pozostaje tylko ustalić, skąd odśmiecanie ma wiedzieć które wartości są
+osiągalne. W tym celu trzeba przyjąć albo bardzo silne założenia o systemie
+zarządzania pamięcią, albo dodać do obiektów pewne metadane o ich zawartości.
+Podobnie jak Appel \cite{Appel16.4} zakładamy:
+\begin{itemize}
+\item przed każdym punktem wejścia do funkcji znajduje się wskaźnik na jej
+  początek,
+\item przed początkiem funkcji znajduje się informacja o używanych przez nią
+  rejestrach,
+\item przed każdym rekordem znajduje się blok metadanych (określający, jego
+  długość oraz czy może zawierać wskaźniki --- jeśli tak, to każdy jego element
+  jest albo wskaźnikiem,albo otagowaną liczbą całkowitą, w przeciwnym wypadku
+  może zawierać dowolne dane nie będące wskaźnikami).
+\end{itemize}
+
+Zauważmy, że jest to wszystko, co potrzebujemy --- ponieważ nie mamy stosu. Razem
+pozwala to zaimplementować szybkie odśmiecanie pamięci przez kopiowanie
+generacjami (\textit{generational garbage collection}).
+
+Opiera się ono na dwóch obserwacjach dotyczących języków funkcyjnych:
+\begin{enumerate}
+\item nowe obiekty są częściej usuwane od starych,
+\item nowe obiekty trzymają referencje na starsze.
+\end{enumerate}
+
+Wynika to z trwałych struktur danych używanych często w programowaniu
+funkcyjnym. W przypadku zagnieżdżania takich struktur konstruktor przyjmuje jako
+argument starszy obiekt (a więc musiał on powstać przed tym wywołaniem
+konstruktora) oraz trzyma do niego referencję (a więc musi zostać usunięty przed
+nim). Jedynym wyjątkiem są modyfikowalne komórki pamięci (o tym za chwilę).
+
+Generacjami będziemy nazywać obszary pamięci, w których będziemy alokować
+obiekty. Kiedy \textit{n}-ty obszar się zapełni, przechodzimy do nowego --- \textit{n+1} --- będziemy
+nazywać go \textit{generacją n+1}. Numery generacji nigdy się nie zmniejszają. Aby
+odzyskać pamięć, użyjemy informacji o aktualnie wykonywanej funkcji, by znaleźć
+wszystkie żywe obiekty w najnowszych generacjach (zwykle wystarczą 2-3), a
+następnie skopiujemy je w nowy obszar i zwolnimy pamięć ze starego. Dzięki
+obserwacji 1. wiemy, że usunęliśmy śmieci z obszarów w których było ich
+najwięcej, a dzięki obserwacji 2. wiemy, że nie zepsuliśmy referencji ze starych
+generacji. Z wyjątkiem modyfikowalnych komórek pamięci. Problem z nimi  możemy
+rozwiązać na kilka sposobów \cite{Appel16.3}: poprzez dwupoziomowe wskaźniki (\textit{assignment
+table}) \cite{Lieberman83}, trzymanie zbioru komórek które mają wskaźniki do nowszych komórek od
+siebie \cite{Shaw87}, lub użycie pamięci wirtualnej \cite{Ungar86}.
+
+
+\section{Posłowie}
+Z różnych przyczyn stworzony przez nas kompilator nie osiągnął poziomu
+generowania faktycznego kodu maszynowego jednej z aktualnych architektur
+procesora. Podczas jego pisania rozważane było użycie języka pośredniego LLVM
+jako ostatniej fazy (z niego kod maszynowy na różne architektury potrafi
+generować szereg narzędzi składających się na kompilator Clang). Niestety
+okazało się, że ten język pośredni nie pasuje do założeń przyjętych w książce
+Appela --- pod pewnymi względami jest o wiele silniejszy, pod innymi brakuje mu
+pewnych rzeczy. Z tego powodu stwierdziliśmy że bardziej kształcące będzie
+wygenerowanie kodu pewnej abstrakcyjnej maszyny. Z tego też powodu nie ma
+implementacji zarządzania pamięcią, ani innych zależnych od platformy części.
+
+\bibliographystyle{plain}
+\bibliography{books}
+
+
+\end{document}
