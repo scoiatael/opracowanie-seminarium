@@ -536,6 +536,7 @@ siebie \cite{Shaw87}, lub użycie pamięci wirtualnej \cite{Ungar86}.
 
 
 \section{Posłowie}
+\subsection{Ograniczenia}
 Z różnych przyczyn stworzony przez nas kompilator nie osiągnął poziomu
 generowania faktycznego kodu maszynowego jednej z aktualnych architektur
 procesora. Podczas jego pisania rozważane było użycie języka pośredniego LLVM
@@ -546,6 +547,15 @@ Appela --- pod pewnymi względami jest o wiele silniejszy, pod innymi brakuje mu
 pewnych rzeczy. Z tego powodu stwierdziliśmy że bardziej kształcące będzie
 wygenerowanie kodu pewnej abstrakcyjnej maszyny. Z tego też powodu nie ma
 implementacji zarządzania pamięcią, ani innych zależnych od platformy części.
+
+\subsection{Podsumowanie}
+Okazuje się, że napisanie kompilatora, nawet wysokiego poziomu, nie jest ciężkie
+- duża część teorii jest przystępna i łatwa do napisania. Z drugiej strony, jest
+też duże pole do rozwoju --- pojawiają się problemy nietrywialne, a całość
+wymaga dobrej organizacji i staranności. Być może napisany na seminarium
+kompilator zostanie w przyszłości rozwinięty o brakujące mu części. Mimo pewnych
+braku, uważam że Implementacja Języków Funkcyjnych zakończyła się sukcesem ---
+zaimplementowaliśmy wszystkie główne części kompilatora.
 
 \bibliographystyle{plain}
 \bibliography{books}
