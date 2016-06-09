@@ -5,12 +5,14 @@
 \usepackage{color}
 \usepackage{fontspec}
 \usepackage{listings,times}
+\usepackage[scaled]{beramono}
+\newfontfamily{\lstsansserif}[Scale=.85]{Latin Modern Mono}
 
 \definecolor{keywords}{RGB}{30,200,30}
 \definecolor{comments}{RGB}{210,40,40}
 \usepackage{listings,times}
 \lstset{
-  basicstyle=\ttfamily\small,
+  basicstyle=\lstsansserif,
   breaklines=true,
   showstringspaces=false,
   literate={fun}{$\lambda$}1,
@@ -22,7 +24,7 @@
 \usepackage[colorlinks=true, urlcolor=blue]{hyperref}
 \usepackage{url}
 
-% \setmainfont{Fira Sans}
+\setmainfont{Latin Modern Roman}
 
 \title{Jak (prawie) bezboleśnie napisać kompilator języka funkcyjnego?}
 \subtitle{Opracowanie seminarium ,,Implementacja języków funkcyjnych''}
@@ -342,7 +344,7 @@ F(App (Primop callcc, E), c) =
 \subsection{Case}
 Dodatkowo, instrukcja \textit{Case} (ma ona
 wybrać odpowiedni przypadek ze skończonej listy) może być przekształcona na
-wiele sposobów  -- \cite[Chapter 5.7: Case statements]{Appel5.7} sugeruje kilka
+wiele sposobów  -- \cite[Chapter 5.7: Case statements]{Appel} sugeruje kilka
 możliwości optymalizacji: binarne przeszukiwania, drzewa decyzyjne, liniowe
 porównania, tablicę skoków. W naszej implementacji wykorzystaliśmy najprostszą
 do napisania: liniowe przeszukiwanie. W większości przypadków lista możliwości
