@@ -22,7 +22,7 @@
 \usepackage[colorlinks=true, urlcolor=blue]{hyperref}
 \usepackage{url}
 
-\setmainfont{Fira Sans}
+% \setmainfont{Fira Sans}
 
 \title{Jak (prawie) bezboleśnie napisać kompilator języka funkcyjnego?}
 \subtitle{Opracowanie seminarium ,,Implementacja języków funkcyjnych''}
@@ -64,8 +64,8 @@ Celem każdego kompilatora jest transformacja tekstu napisanego przez użytkowni
 na kod maszynowy, działający na danej architekturze i wykonujący program zadany
 przez użytkownika.
 Większość kompilatorów wyróżnia przynajmniej dwa stadia: parsowanie tekstu do
-drzewa składniowego (\textit{Abstract Syntax Tree} --- AST) --- \textit{analiza}, a następnie
-generowanie kodu maszynowego z AST --- \textit{synteza} \cite{Dragonbook}.
+drzewa składniowego (\textit{Abstract Syntax Tree} -- AST) -- \textit{analiza}, a następnie
+generowanie kodu maszynowego z AST -- \textit{synteza} \cite{Dragonbook}.
 Im prostszy język w którym kompilator jest napisany, tym trudniej dodać więcej
 stadiów.
 Ponieważ nasz kompilator napisany został w Ocamlu (języku funkcyjnym wysokiego
@@ -74,14 +74,14 @@ AST, a następnie z ciągu transformacji, które upraszczały, optymalizowały o
 tłumaczyły AST na kolejne języki pośrednie.
 W finalnej wersji wyróżnić można następujące języki pośrednie:
 \begin{itemize}
-\item RawMiniML --- pierwszy język, powstały ze sparsowania tekstu użytkownika.
+\item RawMiniML -- pierwszy język, powstały ze sparsowania tekstu użytkownika.
   Można powiedzieć, że ten właśnie język jest przez nas kompilowany.
-\item MiniML --- powstały z poprzedniego przez obliczenie typów
+\item MiniML -- powstały z poprzedniego przez obliczenie typów
   (zaimplementowany został system inferencji typów) i usunięciu sugestii typów
   danych przez użytkownika na rzecz informacji o typie każdego węzła AST.
-\item Lambda --- powstały przez usunięcie typów i wszystkich zależnych od nich konstrukcji z MiniML.
-\item CPS --- Continuation Passing Style --- język w którym będzie wykonana większość optymalizacji.
-\item AbstractM --- asembler procesora na jaki będziemy kompilować.
+\item Lambda -- powstały przez usunięcie typów i wszystkich zależnych od nich konstrukcji z MiniML.
+\item CPS -- Continuation Passing Style -- język w którym będzie wykonana większość optymalizacji.
+\item AbstractM -- asembler procesora na jaki będziemy kompilować.
 \end{itemize}
 
 
@@ -89,7 +89,7 @@ W finalnej wersji wyróżnić można następujące języki pośrednie:
 
 \section{Opis kompilowanego języka}
 MiniML jest uproszczonym językiem z rodziny ML, silnie wzorowanym na Ocamlu
-\cite{Leroy16} oraz SML-u \cite{Appel1}.
+\cite{Leroy16} oraz SML-u \cite[Chapter 1. What is ML?]{Appel}.
 Podobnie jak one, jest statycznie typowany i posiada system inferencji typów.
 Składnia jest podobna do innych języków z tej rodziny, z kilkoma wyjątkami:
 \begin{lstlisting}[caption=Przykład deklaracji typu danych w MiniML]
@@ -107,8 +107,8 @@ in fn ['a] (xs : 'a list) => rev_append['a] xs (nil['a])
 \item Deklaracje typów są widoczne tylko w określonym bloku kodu,
 \item Nie ma ograniczenia w nazewnictwie typów danych i konstruktorów
   (inaczej niż w Ocamlu, podobnie jak w SML-u),
-\item Pattern matching nie wprowadza nowych zmiennych --- do pól konstruktora
-  trzeba się odwołać przez dekonstruktor: \lstinline|\#1 p| --- oznacza drugi element \lstinline|p|
+\item Pattern matching nie wprowadza nowych zmiennych -- do pól konstruktora
+  trzeba się odwołać przez dekonstruktor: \lstinline|\#1 p| -- oznacza drugi element \lstinline|p|
   (gdzie \lstinline|p| jest stworzone przez konstruktor o arności przynajmniej 2),
 \item Polimorficzne funkcje muszą deklarować parametry typowe przez \lstinline|['a]|.
 \item Nie istnieje system modułów.
@@ -128,7 +128,7 @@ wyrażenie w języku MiniML, a zwraca $A_L$- wyrażenie w języku Lambda.
 Nasz język pośredni Lambda pozbawiony jest typów, tak więc na tym etapie
 wszystkie konstrukcje, które w jakiś sposób potrzebują systemu typów muszą
 zostać zamienione na prostsze, które nie potrzebują tej dodatkowej informacji.
-W językach rodziny ML zwykle do nich należą \cite{Appel4}:
+W językach rodziny ML zwykle do nich należą \cite[Chapter 4: ML-specific optimizations]{Appel}:
 \begin{itemize}
 \item nazwane pola rekordów;
 \item moduły, sygnatury, funktory;
@@ -140,16 +140,16 @@ Dodatkowo uwagi wymagają:
 \begin{itemize}
 \item testowanie równości (to, jaki kod będzie potrzebny do porównania
   równości dwóch obiektów ściśle zależy od tego co wiemy o ich typie)
-  \cite{Appel4.3}.,
+  \cite[Chapter 4.3: Equality]{Appel}.,
 \item optymalizacja dostępu do pamięci (niektóre typy mogą pozwolić na lepszą alokację
-  pewnych komórek pamięci) \cite{Appel4.4}.
+  pewnych komórek pamięci) \cite[Chapter 4.4: Unboxed updates]{Appel}.
 \end{itemize}
 
 Język MiniML jest prostszym podzbiorem Ocamla, musimy więc rozważyć jedynie typy
 danych, pattern-matching oraz wyjątki.
 
 Na tym etapie można przyjąć jedno z kilku ograniczeń tego, co jesteśmy w stanie
-zrobić w trakcie działania programu \cite{Appel4.1}:
+zrobić w trakcie działania programu \cite[Chapter 4.1: Data representation]{Appel}:
 \begin{enumerate}
 \setcounter{enumi}{-1}
 \item Nie potrafimy odróżnić wskaźników od liczb całkowitych.
@@ -159,10 +159,10 @@ zrobić w trakcie działania programu \cite{Appel4.1}:
 \end{enumerate}
 Od tego, jakie założenia przyjmiemy zależy ile dodatkowych informacji będziemy
 musieli przechować w pamięci (np dodając dodatkowy znacznik dla każdej wartości,
-mówiącej czy jest ona liczbą całkowitą, czy wskaźnikiem --- pozwoli to pracować
+mówiącej czy jest ona liczbą całkowitą, czy wskaźnikiem -- pozwoli to pracować
 przy założeniu 2, gdy w rzeczywistości maszyna operuje na 0).
 
-W naszym kompilatorze (na tym etapie) przyjęliśmy założenie 1 --- jest ono realne,
+W naszym kompilatorze (na tym etapie) przyjęliśmy założenie 1 -- jest ono realne,
 gdyż w rzeczywistości wszystkie ,,niskie'' wskaźniki zwykle są specjalnie
 pozostawiane wolne, by łatwiej znajdować błędy w programach.
 
@@ -171,13 +171,13 @@ Przy takim założeniu typy danych można podzielić na kilka kategorii, zależn
 tego, jakie informacje musimy o jego konstruktorach przechować:
 
 \begin{enumerate}
-\item ,,Tagged'' --- wymagające przechowania numeru konstruktora i wskaźnika na
+\item ,,Tagged'' -- wymagające przechowania numeru konstruktora i wskaźnika na
   wartość zapisaną w konstruktorze (najogólniejszy),
-\item ,,Constant'' --- potrzeba tylko numeru konstruktora, żaden nie posiada
+\item ,,Constant'' -- potrzeba tylko numeru konstruktora, żaden nie posiada
   dodatkowej wartości,
-\item ,,Transparent'' --- typ danych ma tylko jeden konstruktor, nie potrzeba żadnej
+\item ,,Transparent'' -- typ danych ma tylko jeden konstruktor, nie potrzeba żadnej
   informacji zapisywać,
-\item ,,TransB'' --- typ danych posiada jeden konstruktor z wartością, wszystkie
+\item ,,TransB'' -- typ danych posiada jeden konstruktor z wartością, wszystkie
   poza nim nie przechowują wartości. Dzięki założeniu 1. możemy użyć jednej komórki
   pamięci.
 \end{enumerate}
@@ -190,7 +190,7 @@ i/lub wartość przechowywana w konstruktorze).
 Wprowadzenie nowego typu danych nie generuje żadnego kodu.
 
 Dekonstrukcja instancji typu danych (\textit{pattern matching}) wymaga wygenerowania kodu
-zależnie od kategorii tego typu danych --- żeby dowiedzieć się, z jakim
+zależnie od kategorii tego typu danych -- żeby dowiedzieć się, z jakim
 konstruktorem mamy do czynienia może być potrzebne wykonanie kilku różnych
 czynności:
 \begin{itemize}
@@ -200,7 +200,7 @@ czynności:
 \item czasem też nie trzeba nic robić.
 \end{itemize}
 
-Sytuacja z wyjątkami jest jeszcze gorsza --- wyjątki różnią się od normalnych
+Sytuacja z wyjątkami jest jeszcze gorsza -- wyjątki różnią się od normalnych
 typów danych tym, że na etapie kompilacji danej jednostki nie jest wiadome ile
 będzie typoów
 konstruktorów. Dzieje się tak, ponieważ moduły są kompilowane oddzielnie, i
@@ -217,7 +217,7 @@ generowany przez kod w miejscu deklaracji wyjątku).
 \section{Continuation Passing Style (CPS)}
 CPS to styl zapisu programu, w którym kontynuacja (kontrola, kod który ma użyć
 zwracanej wartości funkcji) jest przekazywana jawnie jako parametr każdej
-funkcji --- zwykle ostatni.
+funkcji -- zwykle ostatni.
 
 Zakładając, że \lstinline|*&|, \lstinline|+&|, \lstinline|sqrt&| to  odpowiedniki funkcji \lstinline|*|, \lstinline|+|, \lstinline|sqrt|  w CPS, używane
 w notacji prefiksowej:
@@ -243,12 +243,12 @@ przechowywania wartości w danym momencie obliczeń) jest trywialna.
 Dodatkowymi zaletami CPS-u są:
 \begin{itemize}
 \item kolejność wykonywania funkcji jest jasno określona i nie zależy od
-  języka (może być ewaluowany zarówno strict, jak i lazy --- te same obliczenia
+  języka (może być ewaluowany zarówno strict, jak i lazy -- te same obliczenia
   zostaną wykonane w tej samej kolejności).
-\item łatwa reprezentacja domknięcia funkcji --- w innych językach pośrednich
+\item łatwa reprezentacja domknięcia funkcji -- w innych językach pośrednich
   często nie pozwala się na zagnieżdżanie funkcji, co wymusza pozbycie się ich z
-  języka we wcześniejszych stadiach --- co może utrudnić wiele
-  optymalizacji~\cite{Appel1.2}.
+  języka we wcześniejszych stadiach -- co może utrudnić wiele
+  optymalizacji~\cite[Chapter 1.2: Advantages of CPS]{Appel}.
 \end{itemize}
 Wszystko to sprawia, że CPS jest zapisem doskonałym do optymalizacji
 (porównywalnym, o ile nie lepszym, niż SSA wykorzystywane przez LLVM i Clang).
@@ -257,13 +257,13 @@ Wszystko to sprawia, że CPS jest zapisem doskonałym do optymalizacji
 
 \section{Transformacja do CPS-u}
 Przekształcenie języka Lambda do CPS-u można traktować jako funkcję $F$,
-przyjmującą jako argumenty $A_L$- wyrażenie w języku Lambda oraz $c$ --- kontynuację, a
+przyjmującą jako argumenty $A_L$- wyrażenie w języku Lambda oraz $c$ -- kontynuację, a
 zwracającą $A_C$- wyrażenie w CPS.\@ Transformację rozpoczyna wywołanie $F$ z
 wyrażeniem reprezentującym pełen program oraz kontynuacją która zakończy
 działanie programu gdy zostanie wywołana.
 
 
-Całość transformacji została opisana szczegółowo w \cite{Appel5}. Na szczególną uwagę
+Całość transformacji została opisana szczegółowo w \cite[Conversion into CPS]{Appel}. Na szczególną uwagę
 zasługują pewne szczególne przypadki.
 
 \subsection{Operatory logiczne}
@@ -276,7 +276,7 @@ F(App (Primop i, E), c) =
    F(E, fun v . PRIMOP(i, [v], [], [c(INT 0), c(INT 1)]))
 \end{lstlisting}
 
-Niestety kopiując kontynuację, zwiększamy rozmiar kodu wynikowego --- czasem nawet
+Niestety kopiując kontynuację, zwiększamy rozmiar kodu wynikowego -- czasem nawet
 wykładniczo! Możemy tego uniknąć używając pomocniczej funkcji, która przechowa
 kontynuację:
 \begin{lstlisting}
@@ -342,11 +342,11 @@ F(App (Primop callcc, E), c) =
 \subsection{Case}
 Dodatkowo, instrukcja \textit{Case} (ma ona
 wybrać odpowiedni przypadek ze skończonej listy) może być przekształcona na
-wiele sposobów  --- \cite{Appel5.7} sugeruje kilka
+wiele sposobów  -- \cite[Chapter 5.7: Case statements]{Appel5.7} sugeruje kilka
 możliwości optymalizacji: binarne przeszukiwania, drzewa decyzyjne, liniowe
 porównania, tablicę skoków. W naszej implementacji wykorzystaliśmy najprostszą
 do napisania: liniowe przeszukiwanie. W większości przypadków lista możliwości
-będzie bardzo krótka --- praktycznie jedynie generatory kodu tworzą więcej niż
+będzie bardzo krótka -- praktycznie jedynie generatory kodu tworzą więcej niż
 kilka przypadków.
 
 
@@ -376,11 +376,12 @@ eliminacją wspólnych podwyrażeń.
 podstawionymi argumentami. Jest to przydatna optymalizacja (może pozwolić na
 działanie wielu innymi), ale niebezpieczna (powiększa rozmiar programu, bez
 gwarancji na poprawę). Niestety nie da się z pewnością stwierdzić, kiedy ta
-optymalizacja coś da \cite{Appel7.1}. Dlatego stosuje się heurystyki, określające czy
+optymalizacja coś da \cite[Chapter 7.1: When to do in-line expansion]{Appel}. Dlatego stosuje się heurystyki, określające czy
 warto. Starają się one ocenić proste kryterium: czy po zastosowaniu $\beta$-ekspansji
 i kolejnych optymalizacjach rozmiar kodu się zmniejszy. Niestety ponownie nie
 jest to problem, który da się policzyć z całą pewnością inaczej niż wykonując te
-działania. Nasza ocena (wzorowana na \cite{Appel7.2}, \cite{Appel7.3}) opiera się na przypisaniu
+działania. Nasza ocena (wzorowana na \cite[Chapter 7.2: Estimating the
+savings]{Appel}, \cite[Chapter 7.3: Runaway Expansion]{Appel}) opiera się na przypisaniu
 każdej funkcji pewnej oceny jej rozmiaru i porównywaniu szacowanych zmian w
 rozmiarze programu z pewną stałą, pomniejszoną o głębokość (aby uniknąć
 rozwijania ciała już rozwiniętej funkcji) oraz numer rundy (aby przypadkiem nie
@@ -394,9 +395,10 @@ aż osiągniemy punkt stały.
 na połączenie definicji funkcji, lub wyjęcie pewnego wyrażenia z pętli, lub
 niewykonanie potencjalnie drogiej operacji jeśli jej wynik jest potrzebny tylko
 w jednej gałęzi instrukcji warunkowej. Definicja, w jakim przypadku
-optymalizacja ta może być wykonana nie jest ciężka, ale żmudna \cite{Appel8.3}. Wybór
+optymalizacja ta może być wykonana nie jest ciężka, ale żmudna \cite[Chapter
+8.2: Rules for hoisting]{Appel}. Wybór
 czy należy ją wykonać, podobnie jak w wyoadku $\beta$-ekspansji, nie jest
-trywialny. Appel \cite{Appel8.3} sugeruje
+trywialny. Appel \cite[Chapter 8.3: Hoisting optimizations]{Appel} sugeruje
 zachłanne podejście: zamiana kolejności tylko jeśli mamy gwarancję zmniejszenia
 czasu wykonania programu. To oznacza, m.in. że nigdy nie wyjmiemy wyrażenia z pętli
 (gdyż nie mamy gwarancji że wykona się ona przynajmniej raz). Definicje funkcji
@@ -405,7 +407,8 @@ sposób połączenie dwóch funkcji zawsze zmniejsza czas wykonania.
 
 
 \subsection{Eliminacja wspólnych podwyrażeń}
-Eliminację wspólnych podwyrażeń (\textit{Common Subexpression Elimination} --- CSE) najprościej jest pokazać na przykładzie \cite{Appel9}:
+Eliminację wspólnych podwyrażeń (\textit{Common Subexpression Elimination} --
+CSE) najprościej jest pokazać na przykładzie \cite[Chapter 9: Common subexpressions]{Appel}:
 \begin{lstlisting}
 val z = a*b*c+a*b*c
 \end{lstlisting}
@@ -444,7 +447,7 @@ val z = let val v = a*b*c in v+v
 Po otrzymaniu kodu zoptymalizowanego kodu w CPS-ie pozostaje tylko przepisać go
 na wykonywalny na danej maszynie. Problemy na jakie napotkaliśmy to:
 \begin{itemize}
-  \item zagnieżdżone definicje funkcji --- wywołanie funkcji w architekturze von
+  \item zagnieżdżone definicje funkcji -- wywołanie funkcji w architekturze von
     Neumanna jest proste, problem pojawia się gdy funkcja posiada zmienne wolne,
 \item ilość żywych (potrzebnych w danym momencie obliczeń) wartości może
   przewyższyć ilość rejestrów maszyny na którą generujemy kod,
@@ -454,24 +457,25 @@ na wykonywalny na danej maszynie. Problemy na jakie napotkaliśmy to:
 
 \subsection{Domnknięcia}
 Za rozwiązanie pierwszego problemu odpowiada dodanie domknięć (\textit{closure
-conversion}) \cite{Appel10}. Polega ono na prostej zmianie: każda funkcja (zarówno przekazywana
+conversion}) \cite[Chapter 10: Closure conversion]{Appel}. Polega ono na prostej zmianie: każda funkcja (zarówno przekazywana
 jawnie, jak i kontynuacja) przestaje być ,,tylko'' prostym wskaźnikiem na funkcję,
 a staje się strukturą danych o znanej strukturze, która przechowuje zarówno
-adres funkcji, jak i jej zmienne wolne. Struktura ta jest bardzo prosta --- jest
+adres funkcji, jak i jej zmienne wolne. Struktura ta jest bardzo prosta -- jest
 to rekord, którego pierwszym elementem jest wskaźnik na funkcję, a kolejnymi
 jego elementami są zmienne wolne.
 
 Wywołanie funkcji wiąże się ze stworzeniem takiej struktury. Z tego powodu
 przydatne jest znalezienie takich funkcji które nie potrzebują tej dodatkowej
-struktury. Nazywamy takie funkcje \textit{znanymi} --- są to funkcje, które nie są nigdy
+struktury. Nazywamy takie funkcje \textit{znanymi} -- są to funkcje, które nie są nigdy
 przekazywane jako argument. Dzięki temu znamy wszystkie miejsca gdzie dana
-funkcja jest wywoływana i możemy ją przekształcić --- przekazując wszystkie jej
+funkcja jest wywoływana i możemy ją przekształcić -- przekazując wszystkie jej
 zmienne wolne jako argumenty.
 
 \subsection{Rozlewanie rejestrów}
 Aby upewnić się, że ilość potrzebnych żywych zmiennych w danym momencie nie
 przekracza ilości rejestrów (a zatem kod daje się wykonać) wykonujemy proces
-zwany rozlewaniem rejestrów (\textit{register spilling}) \cite{Appel11}. Polega on na wykryciu
+zwany rozlewaniem rejestrów (\textit{register spilling}) \cite[Register
+spilling]{Appel}. Polega on na wykryciu
 takich sytuacji w czasie kompilacji i rozwiązaniu problemu przez alokację
 dodatkowych rekordów na stosie. Dzięki temu zamiast potrzebować n rejestrów na
 zmienne, możemy użyć jednego rejestru wskazującego na rekord n-elementowy.
@@ -493,19 +497,19 @@ mało uruchamiamy procedurę odśmiecania pamięci.
 Pozostaje tylko ustalić, skąd odśmiecanie ma wiedzieć które wartości są
 osiągalne. W tym celu trzeba przyjąć albo bardzo silne założenia o systemie
 zarządzania pamięcią, albo dodać do obiektów pewne metadane o ich zawartości.
-Podobnie jak Appel \cite{Appel16.4} zakładamy:
+Podobnie jak Appel \cite[Chapter 16.4: Runtime data formats]{Appel} zakładamy:
 \begin{itemize}
 \item przed każdym punktem wejścia do funkcji znajduje się wskaźnik na jej
   początek,
 \item przed początkiem funkcji znajduje się informacja o używanych przez nią
   rejestrach,
 \item przed każdym rekordem znajduje się blok metadanych (określający, jego
-  długość oraz czy może zawierać wskaźniki --- jeśli tak, to każdy jego element
+  długość oraz czy może zawierać wskaźniki -- jeśli tak, to każdy jego element
   jest albo wskaźnikiem,albo otagowaną liczbą całkowitą, w przeciwnym wypadku
   może zawierać dowolne dane nie będące wskaźnikami).
 \end{itemize}
 
-Zauważmy, że jest to wszystko, co potrzebujemy --- ponieważ nie mamy stosu. Razem
+Zauważmy, że jest to wszystko, co potrzebujemy -- ponieważ nie mamy stosu. Razem
 pozwala to zaimplementować szybkie odśmiecanie pamięci przez kopiowanie
 generacjami (\textit{generational garbage collection}).
 
@@ -522,7 +526,7 @@ konstruktora) oraz trzyma do niego referencję (a więc musi zostać usunięty p
 nim). Jedynym wyjątkiem są modyfikowalne komórki pamięci (o tym za chwilę).
 
 Generacjami będziemy nazywać obszary pamięci, w których będziemy alokować
-obiekty. Kiedy \textit{n}-ty obszar się zapełni, przechodzimy do nowego --- \textit{n+1} --- będziemy
+obiekty. Kiedy \textit{n}-ty obszar się zapełni, przechodzimy do nowego -- \textit{n+1} -- będziemy
 nazywać go \textit{generacją n+1}. Numery generacji nigdy się nie zmniejszają. Aby
 odzyskać pamięć, użyjemy informacji o aktualnie wykonywanej funkcji, by znaleźć
 wszystkie żywe obiekty w najnowszych generacjach (zwykle wystarczą 2-3), a
@@ -530,7 +534,8 @@ następnie skopiujemy je w nowy obszar i zwolnimy pamięć ze starego. Dzięki
 obserwacji 1. wiemy, że usunęliśmy śmieci z obszarów w których było ich
 najwięcej, a dzięki obserwacji 2. wiemy, że nie zepsuliśmy referencji ze starych
 generacji. Z wyjątkiem modyfikowalnych komórek pamięci. Problem z nimi  możemy
-rozwiązać na kilka sposobów \cite{Appel16.3}: poprzez dwupoziomowe wskaźniki (\textit{assignment
+rozwiązać na kilka sposobów \cite[Chapter 16.3: Generational garbage
+collection]{Appel}: poprzez dwupoziomowe wskaźniki (\textit{assignment
 table}) \cite{Lieberman83}, trzymanie zbioru komórek które mają wskaźniki do nowszych komórek od
 siebie \cite{Shaw87}, lub użycie pamięci wirtualnej \cite{Ungar86}.
 
@@ -543,7 +548,7 @@ procesora. Podczas jego pisania rozważane było użycie języka pośredniego LL
 jako ostatniej fazy (z niego kod maszynowy na różne architektury potrafi
 generować szereg narzędzi składających się na kompilator Clang). Niestety
 okazało się, że ten język pośredni nie pasuje do założeń przyjętych w książce
-Appela --- pod pewnymi względami jest o wiele silniejszy, pod innymi brakuje mu
+Appela -- pod pewnymi względami jest o wiele silniejszy, pod innymi brakuje mu
 pewnych rzeczy. Z tego powodu stwierdziliśmy że bardziej kształcące będzie
 wygenerowanie kodu pewnej abstrakcyjnej maszyny. Z tego też powodu nie ma
 implementacji zarządzania pamięcią, ani innych zależnych od platformy części.
@@ -551,10 +556,10 @@ implementacji zarządzania pamięcią, ani innych zależnych od platformy częś
 \subsection{Podsumowanie}
 Okazuje się, że napisanie kompilatora, nawet wysokiego poziomu, nie jest ciężkie
 - duża część teorii jest przystępna i łatwa do napisania. Z drugiej strony, jest
-też duże pole do rozwoju --- pojawiają się problemy nietrywialne, a całość
+też duże pole do rozwoju -- pojawiają się problemy nietrywialne, a całość
 wymaga dobrej organizacji i staranności. Być może napisany na seminarium
 kompilator zostanie w przyszłości rozwinięty o brakujące mu części. Mimo pewnych
-braku, uważam że Implementacja Języków Funkcyjnych zakończyła się sukcesem ---
+braku, uważam że Implementacja Języków Funkcyjnych zakończyła się sukcesem --
 zaimplementowaliśmy wszystkie główne części kompilatora.
 
 \bibliographystyle{plain}
